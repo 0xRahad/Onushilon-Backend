@@ -4,30 +4,49 @@ const {
   errorResponse,
   paginatedResponse,
 } = require("../utils/responseHandler");
+const { isValidRole } = require("../utils/validators");
 
 const getAllUsers = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
+    // Validate and sanitize pagination parameters
+    const { page, limit } = validatePagination(req.query.page, req.query.limit);
     const skip = (page - 1) * limit;
 
     const query = {};
 
-    if (
-      req.query.role &&
-      ["user", "moderator", "admin"].includes(req.query.role)
-    ) {
+    // Validate role filter
+    if (req.query.role) {
+      if (!isValidRole(req.query.role)) {
+        return errorResponse(
+          res,
+          400,
+          "Invalid role. Must be 'user', 'moderator', or 'admin'"
+        );
+      }
       query.role = req.query.role;
     }
 
+    // Validate isActive filter
     if (req.query.isActive !== undefined) {
+      if (req.query.isActive !== "true" && req.query.isActive !== "false") {
+        return errorResponse(
+          res,
+          400,
+          "Invalid isActive value. Must be 'true' or 'false'"
+        );
+      }
       query.isActive = req.query.isActive === "true";
     }
 
+    // Sanitize search query
     if (req.query.search) {
+      const sanitizedSearch = sanitizeSearchQuery(req.query.search);
+      if (!sanitizedSearch) {
+        return errorResponse(res, 400, "Invalid search query");
+      }
       query.$or = [
-        { name: { $regex: req.query.search, $options: "i" } },
-        { email: { $regex: req.query.search, $options: "i" } },
+        { name: { $regex: sanitizedSearch, $options: "i" } },
+        { email: { $regex: sanitizedSearch, $options: "i" } },
       ];
     }
 
@@ -53,6 +72,11 @@ const getAllUsers = async (req, res) => {
 
 const getUserById = async (req, res) => {
   try {
+    // Validate user ID format
+    if (!isValidObjectId(req.params.id)) {
+      return errorResponse(res, 400, "Invalid user ID format");
+    }
+
     const user = await User.findById(req.params.id).select("-password");
 
     if (!user) {
@@ -62,11 +86,6 @@ const getUserById = async (req, res) => {
     return successResponse(res, 200, "User fetched successfully", { user });
   } catch (error) {
     console.error("Get user error:", error);
-
-    if (error.name === "CastError") {
-      return errorResponse(res, 400, "Invalid user ID format");
-    }
-
     return errorResponse(res, 500, "Server error while fetching user");
   }
 };
@@ -76,6 +95,26 @@ const updateUserRole = async (req, res) => {
     const { role } = req.body;
     const userId = req.params.id;
 
+    // Validate user ID format
+    if (!isValidObjectId(userId)) {
+      return errorResponse(res, 400, "Invalid user ID format");
+    }
+
+    // Validate required fields
+    if (!role) {
+      return errorResponse(res, 400, "Role is required");
+    }
+
+    // Validate role value
+    if (!isValidRole(role)) {
+      return errorResponse(
+        res,
+        400,
+        "Invalid role. Must be 'user', 'moderator', or 'admin'"
+      );
+    }
+
+    // Prevent admin from changing their own role
     if (userId === req.user._id.toString() && role !== "admin") {
       return errorResponse(res, 400, "You cannot change your own admin role");
     }
@@ -100,11 +139,6 @@ const updateUserRole = async (req, res) => {
     });
   } catch (error) {
     console.error("Update role error:", error);
-
-    if (error.name === "CastError") {
-      return errorResponse(res, 400, "Invalid user ID format");
-    }
-
     return errorResponse(res, 500, "Server error while updating role");
   }
 };
@@ -114,10 +148,26 @@ const updateUserStatus = async (req, res) => {
     const { isActive } = req.body;
     const userId = req.params.id;
 
-    if (typeof isActive !== "boolean") {
-      return errorResponse(res, 400, "isActive must be a boolean value");
+    // Validate user ID format
+    if (!isValidObjectId(userId)) {
+      return errorResponse(res, 400, "Invalid user ID format");
     }
 
+    // Validate required fields
+    if (isActive === undefined || isActive === null) {
+      return errorResponse(res, 400, "isActive field is required");
+    }
+
+    // Validate isActive type
+    if (typeof isActive !== "boolean") {
+      return errorResponse(
+        res,
+        400,
+        "isActive must be a boolean value (true or false)"
+      );
+    }
+
+    // Prevent admin from deactivating their own account
     if (userId === req.user._id.toString() && !isActive) {
       return errorResponse(res, 400, "You cannot deactivate your own account");
     }
@@ -148,11 +198,6 @@ const updateUserStatus = async (req, res) => {
     );
   } catch (error) {
     console.error("Update status error:", error);
-
-    if (error.name === "CastError") {
-      return errorResponse(res, 400, "Invalid user ID format");
-    }
-
     return errorResponse(res, 500, "Server error while updating status");
   }
 };
@@ -161,6 +206,12 @@ const deleteUser = async (req, res) => {
   try {
     const userId = req.params.id;
 
+    // Validate user ID format
+    if (!isValidObjectId(userId)) {
+      return errorResponse(res, 400, "Invalid user ID format");
+    }
+
+    // Prevent admin from deleting their own account
     if (userId === req.user._id.toString()) {
       return errorResponse(res, 400, "You cannot delete your own account");
     }
@@ -176,11 +227,6 @@ const deleteUser = async (req, res) => {
     return successResponse(res, 200, "User deleted successfully");
   } catch (error) {
     console.error("Delete user error:", error);
-
-    if (error.name === "CastError") {
-      return errorResponse(res, 400, "Invalid user ID format");
-    }
-
     return errorResponse(res, 500, "Server error while deleting user");
   }
 };

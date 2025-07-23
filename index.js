@@ -1,5 +1,4 @@
 const express = require("express");
-const mongoose = require("mongoose");
 const cors = require("cors");
 const morgan = require("morgan");
 const dotenv = require("dotenv");
@@ -14,7 +13,7 @@ const app = express();
 // Connect to database
 connectDB();
 
-// Middleware
+// Security and utility middleware
 app.use(cors());
 app.use(morgan("dev"));
 app.use(express.json({ limit: "10mb" }));

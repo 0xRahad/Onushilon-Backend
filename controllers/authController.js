@@ -1,11 +1,39 @@
 const User = require("../models/User");
 const { generateToken } = require("../middleware/auth");
 const { successResponse, errorResponse } = require("../utils/responseHandler");
+const {
+  isValidEmail,
+  isValidPhone,
+  isValidPassword,
+} = require("../utils/validators");
 
 const registerUser = async (req, res) => {
   try {
     const { name, email, phone, age, password } = req.body;
 
+    // Check for required fields
+    if (!name || !email || !phone || !age || !password) {
+      return errorResponse(res, 400, "All fields are required");
+    }
+
+    // Validate email format
+    if (!isValidEmail(email)) {
+      return errorResponse(res, 400, "Please provide a valid email address");
+    }
+
+    // Validate phone number
+    if (!isValidPhone(phone)) {
+      return errorResponse(res, 400, "Phone number must be at least 10 digits");
+    }
+
+    // Validate password
+    if (!isValidPassword(password)) {
+      return errorResponse(
+        res,
+        400,
+        "Password must be at least 6 characters long"
+      );
+    }
     const existingUser = await User.findOne({ $or: [{ email }, { phone }] });
     if (existingUser) {
       return errorResponse(
@@ -48,6 +76,16 @@ const registerUser = async (req, res) => {
 const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
+
+    // Check for required fields
+    if (!email || !password) {
+      return errorResponse(res, 400, "Email and password are required");
+    }
+
+    // Validate email format
+    if (!isValidEmail(email)) {
+      return errorResponse(res, 400, "Please provide a valid email address");
+    }
 
     const user = await User.findByEmailWithPassword(email);
     if (!user) {
@@ -112,13 +150,44 @@ const getUserProfile = async (req, res) => {
 
 const updateUserProfile = async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, email, phone, age } = req.body;
 
-    if (!name || name.trim().length < 2) {
-      return errorResponse(res, 400, "Name must be at least 2 characters long");
+    // Validate and update fields if provided
+    if (name) req.user.name = name.trim();
+    if (email) {
+      if (!isValidEmail(email)) {
+        return errorResponse(res, 400, "Please provide a valid email address");
+      }
+      // Check for email uniqueness
+      const existing = await User.findOne({
+        email,
+        _id: { $ne: req.user._id },
+      });
+      if (existing) {
+        return errorResponse(res, 400, "Email already in use");
+      }
+      req.user.email = email.trim();
     }
+    if (phone) {
+      if (!isValidPhone(phone)) {
+        return errorResponse(
+          res,
+          400,
+          "Phone number must be at least 10 digits"
+        );
+      }
+      // Check for phone uniqueness
+      const existing = await User.findOne({
+        phone,
+        _id: { $ne: req.user._id },
+      });
+      if (existing) {
+        return errorResponse(res, 400, "Phone number already in use");
+      }
+      req.user.phone = phone.trim();
+    }
+    if (age) req.user.age = age;
 
-    req.user.name = name.trim();
     await req.user.save();
 
     return successResponse(res, 200, "Profile updated successfully", {

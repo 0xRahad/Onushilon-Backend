@@ -2,19 +2,16 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const { errorResponse } = require("../utils/responseHandler");
 
-// Generate JWT Token
 const generateToken = (userId) => {
   return jwt.sign({ userId }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRE,
   });
 };
 
-// Protect routes - authenticate token
 const authenticate = async (req, res, next) => {
   try {
     let token;
 
-    // Check for token in header
     if (
       req.headers.authorization &&
       req.headers.authorization.startsWith("Bearer")
@@ -26,10 +23,7 @@ const authenticate = async (req, res, next) => {
       return errorResponse(res, 401, "Access denied. No token provided.");
     }
 
-    // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    // Get user from token
     const user = await User.findById(decoded.userId);
 
     if (!user) {
@@ -40,7 +34,6 @@ const authenticate = async (req, res, next) => {
       return errorResponse(res, 401, "Account has been deactivated.");
     }
 
-    // Add user to request object
     req.user = user;
     next();
   } catch (error) {
@@ -49,7 +42,6 @@ const authenticate = async (req, res, next) => {
   }
 };
 
-// Authorize roles
 const authorize = (...roles) => {
   return (req, res, next) => {
     if (!req.user) {

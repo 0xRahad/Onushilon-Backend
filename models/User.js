@@ -4,21 +4,13 @@ const bcrypt = require("bcryptjs");
 const userSchema = new mongoose.Schema({
   name: {
     type: String,
-    required: [true, "Name is required"],
+    required: true,
     trim: true,
-    minlength: [2, "Name must be at least 2 characters"],
-    maxlength: [50, "Name cannot exceed 50 characters"],
   },
   email: {
     type: String,
-    required: [true, "Email is required"],
+    required: true,
     unique: true,
-    lowercase: true,
-    trim: true,
-    match: [
-      /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/,
-      "Please enter a valid email",
-    ],
   },
   phone: {
     type: String,
@@ -30,9 +22,9 @@ const userSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: [true, "Password is required"],
-    minlength: [6, "Password must be at least 6 characters"],
-    select: false, // Don't include password in queries by default
+    required: true,
+    minlength: 6,
+    select: false,
   },
   role: {
     type: String,
@@ -42,6 +34,14 @@ const userSchema = new mongoose.Schema({
   isActive: {
     type: Boolean,
     default: true,
+  },
+  resetOtp: {
+    type: String,
+    default: "",
+  },
+  resetOtpExpireAt: {
+    type: Number,
+    default: 0,
   },
   lastLogin: {
     type: Date,
@@ -56,15 +56,11 @@ const userSchema = new mongoose.Schema({
   },
 });
 
-// Update the updatedAt field before saving
-userSchema.pre("save", function (next) {
-  this.updatedAt = Date.now();
-  next();
-});
-
-// Hash password before saving
+// Pre-save middleware to hash password
 userSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) return next();
+  if (!this.isModified("password")) {
+    return next();
+  }
 
   try {
     const salt = await bcrypt.genSalt(12);
@@ -75,21 +71,56 @@ userSchema.pre("save", async function (next) {
   }
 });
 
-// Instance method to check password
+// Pre-save middleware to update the updatedAt field
+userSchema.pre("save", function (next) {
+  this.updatedAt = Date.now();
+  next();
+});
+
+// Instance method to compare password
 userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-// Instance method to get user info without password
-userSchema.methods.toJSON = function () {
-  const userObject = this.toObject();
-  delete userObject.password;
-  return userObject;
-};
-
-// Static method to find user by email with password for authentication
+// Static method to find user by email with password
 userSchema.statics.findByEmailWithPassword = function (email) {
   return this.findOne({ email }).select("+password");
 };
+
+// Static method to find active users
+userSchema.statics.findActiveUsers = function (query = {}) {
+  return this.find({ ...query, isActive: true });
+};
+
+// Instance method to get public user data
+userSchema.methods.getPublicData = function () {
+  return {
+    id: this._id,
+    name: this.name,
+    email: this.email,
+    age: this.age,
+    phone: this.phone,
+    role: this.role,
+    isActive: this.isActive,
+    lastLogin: this.lastLogin,
+    createdAt: this.createdAt,
+    updatedAt: this.updatedAt,
+  };
+};
+
+// Virtual for full name formatting (if needed in future)
+userSchema.virtual("displayName").get(function () {
+  return this.name.trim();
+});
+
+// Ensure virtual fields are serialized
+userSchema.set("toJSON", {
+  virtuals: true,
+  transform: function (doc, ret) {
+    delete ret.password;
+    delete ret.__v;
+    return ret;
+  },
+});
 
 module.exports = mongoose.model("User", userSchema);
