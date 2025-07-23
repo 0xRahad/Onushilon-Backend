@@ -15,6 +15,16 @@ const validateRegister = [
     .normalizeEmail()
     .withMessage("Please provide a valid email address"),
 
+  body("age")
+    .isNumeric()
+    .withMessage("Age must be a number")
+    .custom((value) => value >= 1 && value <= 70)
+    .withMessage("Age must be between 1 and 70"),
+
+  body("phone")
+    .isLength({ min: 10, max: 15 })
+    .withMessage("Phone number must be between 10 and 15 digits"),
+
   body("password")
     .isLength({ min: 6 })
     .withMessage("Password must be at least 6 characters long")

@@ -20,6 +20,14 @@ const userSchema = new mongoose.Schema({
       "Please enter a valid email",
     ],
   },
+  phone: {
+    type: String,
+    required: true,
+  },
+  age: {
+    type: Number,
+    required: true,
+  },
   password: {
     type: String,
     required: [true, "Password is required"],
@@ -56,11 +64,9 @@ userSchema.pre("save", function (next) {
 
 // Hash password before saving
 userSchema.pre("save", async function (next) {
-  // Only hash the password if it has been modified (or is new)
   if (!this.isModified("password")) return next();
 
   try {
-    // Hash password with cost of 12
     const salt = await bcrypt.genSalt(12);
     this.password = await bcrypt.hash(this.password, salt);
     next();

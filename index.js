@@ -3,19 +3,12 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 const morgan = require("morgan");
 const dotenv = require("dotenv");
-
-// Load environment variables
-dotenv.config();
-
-// Import routes
-const authRoutes = require("./routes/auth");
-const adminRoutes = require("./routes/admin");
-
-// Import database connection
+const authRoutes = require("./routes/auth.routes");
+const adminRoutes = require("./routes/admin.routes");
 const connectDB = require("./config/database");
 const { successResponse, errorResponse } = require("./utils/responseHandler");
 
-// Create Express app
+dotenv.config();
 const app = express();
 
 // Connect to database
@@ -33,9 +26,12 @@ app.use("/api/admin", adminRoutes);
 
 // Health check route
 app.get("/api/health", (req, res) => {
-  return successResponse(res, 200, "Onushilon Quiz Backend API is running", {
-    timestamp: new Date().toISOString(),
-  });
+  return successResponse(
+    res,
+    200,
+    "Onushilon Quiz Backend API is running",
+    new Date().toISOString()
+  );
 });
 
 // 404 handler

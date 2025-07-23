@@ -4,16 +4,22 @@ const { successResponse, errorResponse } = require("../utils/responseHandler");
 
 const registerUser = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, phone, age, password } = req.body;
 
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ $or: [{ email }, { phone }] });
     if (existingUser) {
-      return errorResponse(res, 400, "User with this email already exists");
+      return errorResponse(
+        res,
+        400,
+        "User with this email or phone number already exists"
+      );
     }
 
     const user = new User({
       name,
       email,
+      age,
+      phone,
       password,
     });
 
@@ -26,6 +32,8 @@ const registerUser = async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
+        age: age,
+        phone: phone,
         role: user.role,
         createdAt: user.createdAt,
       },
@@ -69,6 +77,8 @@ const loginUser = async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
+        age: user.age,
+        phone: user.phone,
         role: user.role,
         lastLogin: user.lastLogin,
       },
