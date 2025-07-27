@@ -114,8 +114,16 @@ log "NPM installed: $NPM_VERSION"
 
 # Install MongoDB
 log "Installing MongoDB..."
-wget -qO - https://www.mongodb.org/static/pgp/server-7.0.asc | apt-key add -
-echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu $(lsb_release -cs)/mongodb-org/7.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+# Create keyring directory if it doesn't exist
+mkdir -p /usr/share/keyrings
+
+# Download and add MongoDB GPG key using the modern method
+curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-7.0.gpg
+
+# Add MongoDB repository
+echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu $(lsb_release -cs)/mongodb-org/7.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+
+# Update package list and install MongoDB
 apt update
 apt install -y mongodb-org
 
@@ -128,7 +136,17 @@ sleep 5
 
 # Configure MongoDB with authentication
 log "Configuring MongoDB authentication..."
-mongo --eval "
+# Wait a bit more for MongoDB to fully start
+sleep 10
+
+# Use mongosh instead of deprecated mongo command
+if command -v mongosh &> /dev/null; then
+    MONGO_CMD="mongosh"
+else
+    MONGO_CMD="mongo"
+fi
+
+$MONGO_CMD --eval "
 db = db.getSiblingDB('admin');
 db.createUser({
   user: 'admin',
@@ -343,23 +361,24 @@ fi
 
 # Create backup script
 log "Creating backup script..."
-cat > /usr/local/bin/onushilon-backup.sh << 'EOF'
+cat > /usr/local/bin/onushilon-backup.sh << EOF
 #!/bin/bash
 BACKUP_DIR="/var/backups/onushilon"
-DATE=$(date +%Y%m%d_%H%M%S)
-mkdir -p $BACKUP_DIR
+DATE=\$(date +%Y%m%d_%H%M%S)
+MONGO_PASSWORD="$MONGO_PASSWORD"
+mkdir -p \$BACKUP_DIR
 
 # Backup MongoDB
-mongodump --host localhost --port 27017 --username onushilon_user --password $MONGO_PASSWORD --db onushilon --out $BACKUP_DIR/mongo_$DATE
+mongodump --host localhost --port 27017 --username onushilon_user --password \$MONGO_PASSWORD --authenticationDatabase onushilon --db onushilon --out \$BACKUP_DIR/mongo_\$DATE
 
 # Backup application files
-tar -czf $BACKUP_DIR/app_$DATE.tar.gz -C /var/www onushilon-backend
+tar -czf \$BACKUP_DIR/app_\$DATE.tar.gz -C /var/www onushilon-backend
 
 # Keep only last 7 backups
-find $BACKUP_DIR -name "mongo_*" -mtime +7 -delete
-find $BACKUP_DIR -name "app_*" -mtime +7 -delete
+find \$BACKUP_DIR -name "mongo_*" -mtime +7 -delete
+find \$BACKUP_DIR -name "app_*" -mtime +7 -delete
 
-echo "Backup completed: $DATE"
+echo "Backup completed: \$DATE"
 EOF
 
 chmod +x /usr/local/bin/onushilon-backup.sh
