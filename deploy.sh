@@ -1,22 +1,8 @@
 #!/bin/bash
 
-# Onushilon Backend VPS Deployment Script
-# Deploys Node.js app with Nginx, MongoDB, PM2, and SSL
-# Author: Onushilon Team
-# Date: $(date +%Y-%m-%d)
+# Onushilon Backend VPS Deployment Script (Plain Version)
 
 set -e
-
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-log()    { echo -e "${GREEN}[$(date +'%F %T')] $1${NC}"; }
-warn()   { echo -e "${YELLOW}[$(date +'%F %T')] WARNING: $1${NC}"; }
-error()  { echo -e "${RED}[$(date +'%F %T')] ERROR: $1${NC}"; exit 1; }
 
 # Configs
 APP_NAME="onushilon-backend"
@@ -29,65 +15,58 @@ PORT=3000
 # Detect IP
 SERVER_IP=$(curl -s ifconfig.me || wget -qO- ifconfig.me || echo "127.0.0.1")
 
-# Ask for domain
-echo -e "${BLUE}=================================================="
+echo "=================================================="
 echo "     Onushilon Backend VPS Deployment Script"
-echo -e "==================================================${NC}"
+echo "=================================================="
 read -p "Enter your domain name (leave empty to use IP $SERVER_IP): " DOMAIN_NAME
 DOMAIN_NAME=${DOMAIN_NAME:-$SERVER_IP}
-[[ "$DOMAIN_NAME" == "$SERVER_IP" ]] && warn "Using IP address: $DOMAIN_NAME" || log "Using domain: $DOMAIN_NAME"
+[ "$DOMAIN_NAME" == "$SERVER_IP" ] && echo "[INFO] Using IP address: $DOMAIN_NAME" || echo "[INFO] Using domain: $DOMAIN_NAME"
 
-# Ask for passwords/secrets
+# Secrets
 read -s -p "Enter MongoDB admin password: " MONGO_PASSWORD; echo ""
-[ -z "$MONGO_PASSWORD" ] && error "MongoDB password cannot be empty"
+[ -z "$MONGO_PASSWORD" ] && { echo "MongoDB password cannot be empty"; exit 1; }
 
 read -s -p "Enter JWT secret (leave blank to auto-generate): " JWT_SECRET; echo ""
-[ -z "$JWT_SECRET" ] && JWT_SECRET=$(openssl rand -base64 32) && log "Generated random JWT secret"
+[ -z "$JWT_SECRET" ] && JWT_SECRET=$(openssl rand -base64 32)
 
 # Confirm
-echo -e "${YELLOW}\nDeployment Configuration:${NC}"
-echo "Domain/IP: $DOMAIN_NAME"
-echo "App Directory: $APP_DIR"
-echo "Port: $PORT"
-echo "MongoDB Authentication: Enabled"
+echo ""
+echo "================= Configuration ================="
+echo " Domain/IP     : $DOMAIN_NAME"
+echo " App Directory : $APP_DIR"
+echo " Mongo Auth    : Enabled"
+echo "=================================================="
 read -p "Continue with deployment? (y/N): " CONFIRM
-[[ ! $CONFIRM =~ ^[Yy]$ ]] && error "Deployment cancelled"
+[[ ! $CONFIRM =~ ^[Yy]$ ]] && { echo "Deployment cancelled"; exit 1; }
 
 # Check root
-[ "$EUID" -ne 0 ] && error "Run as root"
+[ "$EUID" -ne 0 ] && { echo "Run this script as root"; exit 1; }
 
-# System update
-log "Updating system packages..."
+echo "[STEP] Updating system..."
 apt update && apt upgrade -y
 
-# Essential packages
-log "Installing dependencies..."
+echo "[STEP] Installing dependencies..."
 apt install -y curl wget gnupg2 software-properties-common apt-transport-https ca-certificates lsb-release jq
 
-# Node.js
-log "Installing Node.js LTS..."
+echo "[STEP] Installing Node.js LTS..."
 curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
 apt install -y nodejs
 
-log "Node: $(node -v), NPM: $(npm -v)"
-
-# MongoDB (with plucky fix)
-log "Installing MongoDB..."
+echo "[STEP] Installing MongoDB..."
 MONGO_KEYRING="/usr/share/keyrings/mongodb-server-7.0.gpg"
 UBUNTU_CODENAME=$(lsb_release -cs)
-[[ "$UBUNTU_CODENAME" == "plucky" ]] && warn "Using 'jammy' MongoDB repo for Ubuntu 24.04" && UBUNTU_CODENAME="jammy"
+[ "$UBUNTU_CODENAME" == "plucky" ] && UBUNTU_CODENAME="jammy"
 
 curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg --dearmor -o "$MONGO_KEYRING"
 echo "deb [ arch=amd64,arm64 signed-by=$MONGO_KEYRING ] https://repo.mongodb.org/apt/ubuntu $UBUNTU_CODENAME/mongodb-org/7.0 multiverse" > /etc/apt/sources.list.d/mongodb-org-7.0.list
 
 apt update
 apt install -y mongodb-org
-
 systemctl start mongod
 systemctl enable mongod
 sleep 10
 
-log "Creating MongoDB users..."
+echo "[STEP] Creating MongoDB users..."
 mongosh --eval "
 db = db.getSiblingDB('admin');
 db.createUser({
@@ -106,30 +85,26 @@ db.createUser({
 sed -i 's/#security:/security:\n  authorization: enabled/' /etc/mongod.conf
 systemctl restart mongod
 
-# Nginx + PM2
-log "Installing Nginx and PM2..."
+echo "[STEP] Installing Nginx and PM2..."
 apt install -y nginx
 npm install -g pm2
 
-# User + app dir
-log "Creating app user and directory..."
-id "$APP_USER" &>/dev/null || { useradd -m -s /bin/bash $APP_USER; usermod -aG sudo $APP_USER; log "User $APP_USER created"; }
+echo "[STEP] Creating app user and directory..."
+id "$APP_USER" &>/dev/null || { useradd -m -s /bin/bash $APP_USER; usermod -aG sudo $APP_USER; }
 mkdir -p "$APP_DIR"
 chown -R $APP_USER:$APP_USER "$APP_DIR"
 
-# Copy files
 if [ -f "package.json" ]; then
-    log "Copying application files..."
+    echo "[STEP] Copying application files..."
     cp -r . "$APP_DIR"
     rm -f "$APP_DIR/deploy.sh"
     rm -rf "$APP_DIR/.git" "$APP_DIR/node_modules"
     chown -R $APP_USER:$APP_USER "$APP_DIR"
 else
-    warn "No package.json found. Upload app files to $APP_DIR manually."
+    echo "[WARNING] No package.json found. Upload your app to $APP_DIR manually."
 fi
 
-# .env
-log "Creating .env file..."
+echo "[STEP] Creating .env file..."
 cat > "$APP_DIR/.env" << EOF
 NODE_ENV=production
 PORT=$PORT
@@ -145,13 +120,11 @@ EOF
 chmod 600 "$APP_DIR/.env"
 chown $APP_USER:$APP_USER "$APP_DIR/.env"
 
-# Dependencies
-log "Installing dependencies..."
+echo "[STEP] Installing npm dependencies..."
 cd "$APP_DIR"
 sudo -u $APP_USER npm install --production
 
-# PM2 config
-log "Creating PM2 ecosystem..."
+echo "[STEP] Creating PM2 config..."
 cat > "$APP_DIR/ecosystem.config.js" << EOF
 module.exports = {
   apps: [{
@@ -172,19 +145,18 @@ module.exports = {
   }]
 };
 EOF
+
 mkdir -p /var/log/pm2
 chown -R $APP_USER:$APP_USER /var/log/pm2 "$APP_DIR/ecosystem.config.js"
 
-# Start PM2
-log "Starting app with PM2..."
+echo "[STEP] Starting PM2..."
 cd "$APP_DIR"
 sudo -u $APP_USER pm2 start ecosystem.config.js
 sudo -u $APP_USER pm2 save
 STARTUP_CMD=$(sudo -u $APP_USER pm2 startup | tail -n1)
 eval "$STARTUP_CMD"
 
-# Nginx config
-log "Configuring Nginx..."
+echo "[STEP] Configuring Nginx..."
 cat > "$NGINX_SITES_AVAILABLE/$APP_NAME" << EOF
 server {
     listen 80;
@@ -221,35 +193,32 @@ nginx -t
 systemctl restart nginx
 systemctl enable nginx
 
-# Firewall
-log "Configuring UFW firewall..."
+echo "[STEP] Configuring firewall..."
 ufw --force enable
 ufw allow OpenSSH
 ufw allow 'Nginx Full'
 ufw allow 27017
 
-# SSL (skip for IP)
 if [[ ! $DOMAIN_NAME =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    log "Installing SSL with Certbot..."
+    echo "[STEP] Installing SSL with Certbot..."
     apt install -y certbot python3-certbot-nginx
-    certbot --nginx -d "$DOMAIN_NAME" --non-interactive --agree-tos --email "admin@$DOMAIN_NAME" --redirect || warn "Certbot failed"
+    certbot --nginx -d "$DOMAIN_NAME" --non-interactive --agree-tos --email "admin@$DOMAIN_NAME" --redirect || echo "Certbot failed"
 else
-    warn "SSL skipped for IP address"
+    echo "[INFO] SSL skipped for IP address"
 fi
 
-# Final status
-log "Checking services..."
-systemctl is-active --quiet mongod && log "MongoDB running ✓" || warn "MongoDB not running ✗"
-systemctl is-active --quiet nginx && log "Nginx running ✓" || warn "Nginx not running ✗"
-sudo -u $APP_USER pm2 list | grep -q "$APP_NAME.*online" && log "PM2 app running ✓" || warn "PM2 app not running ✗"
-curl -f -s http://localhost:$PORT/api/health > /dev/null && log "Health check passed ✓" || warn "Health check failed ✗"
-
-# Done
-echo -e "${GREEN}=================================================="
-echo "           🎉 Deployment Complete!"
-echo "==================================================${NC}"
-echo "🌐 URL: http://$DOMAIN_NAME"
-echo "📁 App Directory: $APP_DIR"
-echo "⚙️  Env File: $APP_DIR/.env"
-echo "🛠 Logs: sudo -u $APP_USER pm2 logs $APP_NAME"
-echo "🔄 Restart: sudo -u $APP_USER pm2 restart $APP_NAME"
+# Summary
+echo ""
+echo "=================================================="
+echo "           ✅ Deployment Complete!"
+echo "=================================================="
+echo "🌐 App URL        : http://$DOMAIN_NAME"
+[[ ! $DOMAIN_NAME =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && echo "🔒 HTTPS URL      : https://$DOMAIN_NAME"
+echo "📁 App Directory  : $APP_DIR"
+echo "🗃️  MongoDB URI    : mongodb://onushilon_user:***@localhost:27017/onushilon"
+echo "⚙️  Env File       : $APP_DIR/.env"
+echo "📜 PM2 Logs       : sudo -u $APP_USER pm2 logs $APP_NAME"
+echo "🔄 Restart App    : sudo -u $APP_USER pm2 restart $APP_NAME"
+echo "🛑 Stop App       : sudo -u $APP_USER pm2 stop $APP_NAME"
+echo "📈 PM2 Monitor    : sudo -u $APP_USER pm2 monit"
+echo "=================================================="
