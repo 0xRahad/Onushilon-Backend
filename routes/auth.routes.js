@@ -9,4 +9,8 @@ router.post("/login", authController.loginUser);
 router.get("/profile", authenticate, authController.getUserProfile);
 router.put("/profile", authenticate, authController.updateUserProfile);
 
+// Password reset routes
+router.post("/password-reset/request", authController.requestPasswordReset);
+router.post("/password-reset/reset", authController.resetPassword);
+
 module.exports = router;
